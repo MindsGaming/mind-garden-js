@@ -17,7 +17,6 @@ export class SelfLearningLLM {
   private tagger: Tagger;
   private vectorSize: number;
   private vocabulary: Map<string, number>;
-  private conversationContext: string[];
 
   constructor(inputSize: number = 32, hiddenSize: number = 16, outputSize: number = 32) {
     this.vectorSize = inputSize;
@@ -27,7 +26,6 @@ export class SelfLearningLLM {
     this.memory = new LocalMemory('SelfLearningLLM');
     this.tagger = new Tagger();
     this.vocabulary = new Map();
-    this.conversationContext = [];
     
     this.loadVocabulary();
   }
@@ -110,71 +108,24 @@ export class SelfLearningLLM {
   }
 
   respond(prompt: string): string {
+    const inputVector = this.vectorize(prompt);
     const tags = this.tag(prompt);
+    
+    // Check memory for similar prompts
     const memories = this.getMemories();
-    
-    // Add to conversation context
-    this.conversationContext.push(prompt.toLowerCase());
-    if (this.conversationContext.length > 5) {
-      this.conversationContext.shift();
-    }
-    
-    // If we have training data, always try to find a match
-    if (memories.length > 0) {
-      // Find best match using contextual similarity
-      let bestMatch: TrainingEntry | null = null;
-      let bestScore = 0;
-      
-      for (const memory of memories) {
-        const tagSimilarity = this.tagger.similarity(tags, memory.tags);
-        const contextScore = this.getContextScore(prompt, memory);
-        const combinedScore = tagSimilarity * 0.8 + contextScore * 0.2;
-        
-        if (combinedScore > bestScore) {
-          bestScore = combinedScore;
-          bestMatch = memory;
-        }
-      }
+    const similar = memories.find(m => 
+      this.tagger.similarity(tags, m.tags) > 0.5
+    );
 
-      // Use best match if we found any similarity at all
-      if (bestMatch && bestScore > 0.05) {
-        return bestMatch.response;
-      }
-
-      // Always try neural prediction if we have training data
-      const inputVector = this.vectorize(prompt);
-      const output = this.predict(inputVector);
-      const prediction = this.devectorize(output);
-      
-      if (prediction) {
-        return prediction;
-      }
+    if (similar) {
+      return similar.response;
     }
 
-    // Only use fallback if truly no training data
-    return this.getIntentBasedFallback(tags, prompt);
-  }
-  
-  private getContextScore(prompt: string, memory: TrainingEntry): number {
-    const promptWords = new Set(prompt.toLowerCase().split(/\s+/));
-    const memoryWords = new Set(memory.prompt.toLowerCase().split(/\s+/));
+    // Use neural network prediction
+    const output = this.predict(inputVector);
+    const prediction = this.devectorize(output);
     
-    // Check if any recent context words appear in the memory
-    const contextRelevance = this.conversationContext.some(ctx => 
-      memory.prompt.toLowerCase().includes(ctx) || 
-      ctx.includes(memory.prompt.toLowerCase().split(/\s+/)[0])
-    ) ? 0.5 : 0;
-    
-    // Word overlap score
-    const intersection = [...promptWords].filter(w => memoryWords.has(w)).length;
-    const union = new Set([...promptWords, ...memoryWords]).size;
-    const wordScore = union > 0 ? intersection / union : 0;
-    
-    return Math.max(contextRelevance, wordScore);
-  }
-  
-  private getIntentBasedFallback(tags: string[], prompt: string): string {
-    return "I'm still learning. Try teaching me in the Training Panel!";
+    return prediction || "I'm still learning. Can you teach me how to respond?";
   }
 
   private devectorize(vector: number[]): string {
@@ -182,16 +133,11 @@ export class SelfLearningLLM {
     
     this.vocabulary.forEach((index, word) => {
       const vecIndex = index % this.vectorSize;
-      if (vector[vecIndex] > 0.1) { // Only include words with significant activation
-        words.push([word, vector[vecIndex]]);
-      }
+      words.push([word, vector[vecIndex]]);
     });
 
     words.sort((a, b) => b[1] - a[1]);
-    const topWords = words.slice(0, 8).map(w => w[0]);
-    
-    // Create a more natural response
-    return topWords.length > 0 ? topWords.join(' ') : '';
+    return words.slice(0, 5).map(w => w[0]).join(' ');
   }
 
   getMemories(): TrainingEntry[] {
@@ -201,7 +147,6 @@ export class SelfLearningLLM {
   clearMemory(): void {
     this.memory.clear();
     this.vocabulary.clear();
-    this.conversationContext = [];
   }
 
   getStats() {
