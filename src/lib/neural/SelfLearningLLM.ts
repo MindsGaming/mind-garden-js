@@ -126,20 +126,32 @@ export class SelfLearningLLM {
     for (const memory of memories) {
       const tagSimilarity = this.tagger.similarity(tags, memory.tags);
       const contextScore = this.getContextScore(prompt, memory);
-      const combinedScore = tagSimilarity * 0.6 + contextScore * 0.4;
+      const combinedScore = tagSimilarity * 0.7 + contextScore * 0.3;
       
-      if (combinedScore > bestScore && combinedScore > 0.3) {
+      if (combinedScore > bestScore) {
         bestScore = combinedScore;
         bestMatch = memory;
       }
     }
 
-    if (bestMatch) {
+    // Use memory if score is decent
+    if (bestMatch && bestScore > 0.2) {
       return bestMatch.response;
     }
 
-    // Fallback responses based on intent
-    return this.getIntentBasedFallback(tags);
+    // Try neural network prediction
+    if (memories.length > 0) {
+      const inputVector = this.vectorize(prompt);
+      const output = this.predict(inputVector);
+      const prediction = this.devectorize(output);
+      
+      if (prediction && prediction.length > 3) {
+        return prediction;
+      }
+    }
+
+    // Last resort: intent-based fallback
+    return this.getIntentBasedFallback(tags, prompt);
   }
   
   private getContextScore(prompt: string, memory: TrainingEntry): number {
@@ -160,17 +172,27 @@ export class SelfLearningLLM {
     return Math.max(contextRelevance, wordScore);
   }
   
-  private getIntentBasedFallback(tags: string[]): string {
+  private getIntentBasedFallback(tags: string[], prompt: string): string {
+    const lowerPrompt = prompt.toLowerCase().trim();
     const hasIntent = (intent: string) => tags.some(t => t.includes(`intent:${intent}`));
     
-    if (hasIntent('greeting')) {
+    // Only use greeting fallback for very clear greetings
+    if (hasIntent('greeting') && lowerPrompt.length < 20 && 
+        (lowerPrompt.startsWith('hello') || lowerPrompt.startsWith('hi') || 
+         lowerPrompt.startsWith('hey') || lowerPrompt === 'greetings')) {
       return "Hello! I'm learning to chat. You can teach me new responses in the Training Panel!";
     }
-    if (hasIntent('question')) {
-      return "I don't know yet, but you can teach me! Use the Training Panel to show me how to respond.";
-    }
-    if (hasIntent('farewell')) {
+    
+    // Only use farewell for clear goodbyes
+    if (hasIntent('farewell') && lowerPrompt.length < 15 &&
+        (lowerPrompt.startsWith('bye') || lowerPrompt.startsWith('goodbye'))) {
       return "Goodbye! Thanks for chatting with me.";
+    }
+    
+    // For everything else, try to echo with variation
+    const words = prompt.split(/\s+/).filter(w => w.length > 2);
+    if (words.length > 0) {
+      return `Interesting! You mentioned "${words[0]}". I'm still learning about this - teach me more?`;
     }
     
     return "I'm still learning. Try teaching me this in the Training Panel!";
