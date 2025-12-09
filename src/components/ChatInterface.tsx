@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Send, Brain, User } from 'lucide-react';
-import { SelfLearningLLM } from '@/lib/neural/SelfLearningLLM';
+import { UQRC_LLM } from '@/lib/uqrc';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -13,17 +13,11 @@ interface Message {
 }
 
 interface ChatInterfaceProps {
-  llm: SelfLearningLLM;
+  llm: UQRC_LLM;
 }
 
 export const ChatInterface = ({ llm }: ChatInterfaceProps) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: "Hello! I'm a self-learning LLM. I'll learn from our conversations. Try teaching me something!",
-      timestamp: Date.now()
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -47,13 +41,13 @@ export const ChatInterface = ({ llm }: ChatInterfaceProps) => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
     setIsProcessing(true);
 
-    // Simulate thinking time
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 300));
 
-    const response = llm.respond(input);
+    const response = llm.respond(currentInput);
     const assistantMessage: Message = {
       role: 'assistant',
       content: response,
@@ -68,10 +62,20 @@ export const ChatInterface = ({ llm }: ChatInterfaceProps) => {
     <Card className="flex flex-col h-[600px] bg-card shadow-card">
       <div className="flex items-center gap-2 p-4 border-b border-border">
         <Brain className="w-5 h-5 text-primary" />
-        <h2 className="text-lg font-semibold">Neural Chat</h2>
+        <h2 className="text-lg font-semibold">UQRC Chat</h2>
+        <span className="text-xs text-muted-foreground ml-auto mono">
+          Phase: {llm.getStats().phase}
+        </span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 && (
+          <div className="text-center text-muted-foreground p-8">
+            <Brain className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p className="text-sm">Dead state initialized. Say something to begin learning.</p>
+          </div>
+        )}
+        
         {messages.map((message, index) => (
           <div
             key={index}
@@ -97,10 +101,7 @@ export const ChatInterface = ({ llm }: ChatInterfaceProps) => {
               {message.tags && message.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1">
                   {message.tags.slice(0, 3).map((tag, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-0.5 text-xs bg-secondary rounded-full mono text-muted-foreground"
-                    >
+                    <span key={i} className="px-2 py-0.5 text-xs bg-secondary rounded-full mono text-muted-foreground">
                       {tag}
                     </span>
                   ))}
@@ -140,16 +141,11 @@ export const ChatInterface = ({ llm }: ChatInterfaceProps) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Type your message..."
+            placeholder="Type something to teach or test..."
             disabled={isProcessing}
             className="bg-input"
           />
-          <Button
-            onClick={handleSend}
-            disabled={isProcessing || !input.trim()}
-            size="icon"
-            className="shadow-glow"
-          >
+          <Button onClick={handleSend} disabled={isProcessing || !input.trim()} size="icon" className="shadow-glow">
             <Send className="w-4 h-4" />
           </Button>
         </div>
